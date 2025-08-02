@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/Gitsack/passport-image-generator/compare/v1.0.1...v1.0.2) (2025-08-02)
+
+
+### Bug Fixes
+
+* added demo image, updated readme ([44bf59a](https://github.com/Gitsack/passport-image-generator/commit/44bf59a956a3192c0486575c55fd8cb9c397f93d))
+
 ## [1.0.1](https://github.com/Gitsack/passport-image-generator/compare/v1.0.0...v1.0.1) (2025-08-02)
 
 
