@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/Gitsack/passport-image-generator/compare/v1.0.0...v1.0.1) (2025-08-02)
+
+
+### Bug Fixes
+
+* correct naming after rename ([5933e35](https://github.com/Gitsack/passport-image-generator/commit/5933e355fd3cdc411ac399adedd856eb27e11d0b))
+
 ## 1.0.0 (2025-08-02)
 
 
