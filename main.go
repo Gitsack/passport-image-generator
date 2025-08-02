@@ -1,3 +1,17 @@
+// Passport Photo Generator
+//
+// A configurable passport photo generator that supports different country standards.
+//
+// CONFIGURATION:
+// To adapt for different countries, modify the constants in the configuration section:
+// - PHOTO_WIDTH_MM, PHOTO_HEIGHT_MM: Photo dimensions
+// - PHOTO_WIDTH_PX, PHOTO_HEIGHT_PX: Pixel dimensions (recalculate using: mm * 300 / 25.4)
+// - HEAD_HEIGHT_RATIO: Head size as fraction of photo height
+// - EYE_POSITION_FROM_TOP_RATIO: Eye position from top
+// - HEADSPACE_RATIO: Space above head
+//
+// Current configuration: Austrian/EU standard (35×45mm)
+
 package main
 
 import (
@@ -19,17 +33,62 @@ import (
 )
 
 const (
-	// Austrian passport photo standards (35x45mm at 300 DPI)
-	PHOTO_WIDTH_MM  = 35
-	PHOTO_HEIGHT_MM = 45
-	PHOTO_WIDTH_PX  = 413
-	PHOTO_HEIGHT_PX = 531
-	DPI             = 300
+	// =============================================================================
+	// PASSPORT PHOTO CONFIGURATION - Modify these for different countries
+	// =============================================================================
 	
-	// Face positioning standards for Austrian passports
-	FACE_HEIGHT_RATIO = 0.75  // Face should be 75% of photo height (middle of 71-80% range)
-	EYE_POSITION_RATIO = 0.65 // Eyes at 65% from bottom (middle of 60-70% range)
-	FACE_DETECTION_TO_HEAD_RATIO = 0.53 // Face detection size is ~53% of actual head height
+	// Photo dimensions (default: Austrian/EU standard 35×45mm)
+	// Common alternatives:
+	// - US: 51×51mm (2×2 inches)
+	// - UK: 45×35mm (landscape orientation)
+	// - Canada: 50×70mm
+	// - India: 35×45mm
+	PHOTO_WIDTH_MM  = 35   // Photo width in millimeters
+	PHOTO_HEIGHT_MM = 45   // Photo height in millimeters
+	
+	// Print quality (300 DPI is standard for professional printing)
+	DPI = 300
+	
+	// Pixel dimensions (calculated from mm and DPI: mm * 300 / 25.4)
+	// For 35×45mm at 300 DPI: 413×531 pixels
+	// To change: recalculate using: new_mm * 300 / 25.4
+	PHOTO_WIDTH_PX  = 413  // 35mm * 300 DPI / 25.4 = 413px
+	PHOTO_HEIGHT_PX = 531  // 45mm * 300 DPI / 25.4 = 531px
+	
+	// =============================================================================
+	// FACE POSITIONING CONFIGURATION
+	// =============================================================================
+	
+	// Head size as fraction of photo height (default: 3/4 for Austrian standard)
+	// Common alternatives:
+	// - US: 50-69% (0.5 to 0.69)
+	// - UK: 70-80% (0.7 to 0.8)
+	// - Canada: 31-36mm for 50×70mm photo (≈ 0.5)
+	HEAD_HEIGHT_RATIO = 0.75  // Head height (chin to skull) as fraction of photo height
+	
+	// Eye position from top as fraction of photo height (default: 48% for Austrian)
+	// This determines where the eyes should be positioned vertically
+	EYE_POSITION_FROM_TOP_RATIO = 0.48  // Eyes at 48% from top of photo
+	
+	// Headspace above head as fraction of photo height (default: 10% for Austrian)
+	HEADSPACE_RATIO = 0.1  // Space above head as fraction of photo height
+	
+	// Face detection calibration (how much of actual head the face detection captures)
+	// This is used to scale the detected face to match the required head size
+	FACE_DETECTION_TO_HEAD_RATIO = 0.70  // Face detection captures ~70% of head height
+	
+	// Eye level within detected face (where eyes are relative to face detection box)
+	EYE_LEVEL_IN_FACE_RATIO = 0.42  // Eyes at 42% down from top of face detection
+	
+	// Forehead estimation (how much above face detection is the skull top)
+	FOREHEAD_EXTENSION_RATIO = 0.15  // Skull extends 15% above face detection
+	
+	// =============================================================================
+	// LAYOUT CONFIGURATION
+	// =============================================================================
+	
+	// Minimum spacing between photos in millimeters
+	MIN_SPACING_MM = 2.0  // Minimum space between photos for cutting
 )
 
 type PrintFormat struct {
@@ -69,9 +128,8 @@ func calculateLayoutForOrientation(widthMM, heightMM int) (cols, rows, totalPhot
 	widthPX := int(math.Round(float64(widthMM) * 300.0 / 25.4))
 	heightPX := int(math.Round(float64(heightMM) * 300.0 / 25.4))
 	
-	// Minimum spacing: 2mm between photos, 2mm margins
-	minSpacingMM := 2.0
-	minSpacingPX := int(math.Round(minSpacingMM * 300.0 / 25.4))
+	// Use configurable minimum spacing
+	minSpacingPX := int(math.Round(MIN_SPACING_MM * float64(DPI) / 25.4))
 	minMarginPX := minSpacingPX
 	
 	// Calculate maximum photos that can fit with minimum spacing
@@ -139,7 +197,7 @@ type FaceDetection struct {
 }
 
 func main() {
-	fmt.Println("Austrian Passport Photo Generator - Automatic Mode")
+	fmt.Printf("Passport Photo Generator - %dx%dmm Standard\n", PHOTO_WIDTH_MM, PHOTO_HEIGHT_MM)
 	fmt.Println("================================================")
 
 	config := getConfig()
@@ -159,10 +217,6 @@ func main() {
 		log.Fatal("Error creating passport photo:", err)
 	}
 
-	// Generate preview
-	previewPath := generatePreview(passportPhoto, config.InputPath)
-	fmt.Printf("📷 Preview saved: %s\n", previewPath)
-
 	// Create print layout
 	printLayout := createPrintLayout(passportPhoto, config.PrintFormat)
 
@@ -180,67 +234,93 @@ func main() {
 }
 
 func getConfig() Config {
+	var inputPath string
+	var selectedFormat PrintFormat
 	reader := bufio.NewReader(os.Stdin)
+	
+	// Check for command line argument first
+	if len(os.Args) > 1 {
+		inputPath = os.Args[1]
+		
+		// If format is provided as second argument, use it; otherwise use default 10x15cm
+		if len(os.Args) > 2 {
+			formatArg := os.Args[2]
+			predefinedFormats := getPredefinedFormats()
+			
+			switch formatArg {
+			case "10x15", "1":
+				selectedFormat = predefinedFormats[0]
+			case "13x18", "2":
+				selectedFormat = predefinedFormats[1]
+			default:
+				fmt.Printf("Invalid format '%s'. Using default 10x15cm format.\n", formatArg)
+				selectedFormat = predefinedFormats[0]
+			}
+		} else {
+			// Default to 10x15cm format for command line usage
+			predefinedFormats := getPredefinedFormats()
+			selectedFormat = predefinedFormats[0]
+			fmt.Printf("Using default format: %s\n", selectedFormat.Name)
+		}
+	} else {
+		// Interactive mode
+		fmt.Print("Enter path to input image: ")
+		input, _ := reader.ReadString('\n')
+		inputPath = strings.TrimSpace(input)
+		
+		// Get predefined formats with dynamic calculation
+		predefinedFormats := getPredefinedFormats()
 
-	// Get input file
-	fmt.Print("Enter path to input image: ")
-	inputPath, _ := reader.ReadString('\n')
-	inputPath = strings.TrimSpace(inputPath)
+		// Show available print formats
+		fmt.Println("\nAvailable print formats:")
+		for i, format := range predefinedFormats {
+			fmt.Printf("%d. %s - %d photos (%dx%d grid)\n",
+				i+1, format.Name, format.PhotosPerSheet, format.Columns, format.Rows)
+		}
+		fmt.Printf("%d. Custom size (WxH cm)\n", len(predefinedFormats)+1)
+
+		fmt.Printf("Select format (1-%d): ", len(predefinedFormats)+1)
+		formatChoice, _ := reader.ReadString('\n')
+		formatChoice = strings.TrimSpace(formatChoice)
+
+		choice, err := strconv.Atoi(formatChoice)
+		if err != nil || choice < 1 || choice > len(predefinedFormats)+1 {
+			log.Fatal("Invalid format choice")
+		}
+
+		if choice <= len(predefinedFormats) {
+			// Predefined format selected
+			selectedFormat = predefinedFormats[choice-1]
+		} else {
+			// Custom format selected
+			fmt.Print("Enter width in cm: ")
+			widthStr, _ := reader.ReadString('\n')
+			widthStr = strings.TrimSpace(widthStr)
+			
+			fmt.Print("Enter height in cm: ")
+			heightStr, _ := reader.ReadString('\n')
+			heightStr = strings.TrimSpace(heightStr)
+			
+			widthCM, err1 := strconv.Atoi(widthStr)
+			heightCM, err2 := strconv.Atoi(heightStr)
+			
+			if err1 != nil || err2 != nil || widthCM <= 0 || heightCM <= 0 {
+				log.Fatal("Invalid dimensions. Please enter positive integers for width and height in cm.")
+			}
+			
+			// Convert cm to mm for internal calculation
+			widthMM := widthCM * 10
+			heightMM := heightCM * 10
+			
+			selectedFormat = createDynamicPrintFormat(fmt.Sprintf("%dx%dcm", widthCM, heightCM), widthMM, heightMM)
+			
+			fmt.Printf("📐 Custom format: %s\n", selectedFormat.Name)
+		}
+	}
 
 	// Check if file exists
 	if _, err := os.Stat(inputPath); os.IsNotExist(err) {
 		log.Fatal("Input file does not exist:", inputPath)
-	}
-
-	// Get predefined formats with dynamic calculation
-	predefinedFormats := getPredefinedFormats()
-
-	// Show available print formats
-	fmt.Println("\nAvailable print formats:")
-	for i, format := range predefinedFormats {
-		fmt.Printf("%d. %s - %d photos (%dx%d grid)\n",
-			i+1, format.Name, format.PhotosPerSheet, format.Columns, format.Rows)
-	}
-	fmt.Printf("%d. Custom size (WxH cm)\n", len(predefinedFormats)+1)
-
-	fmt.Printf("Select format (1-%d): ", len(predefinedFormats)+1)
-	formatChoice, _ := reader.ReadString('\n')
-	formatChoice = strings.TrimSpace(formatChoice)
-
-	choice, err := strconv.Atoi(formatChoice)
-	if err != nil || choice < 1 || choice > len(predefinedFormats)+1 {
-		log.Fatal("Invalid format choice")
-	}
-
-	var selectedFormat PrintFormat
-
-	if choice <= len(predefinedFormats) {
-		// Predefined format selected
-		selectedFormat = predefinedFormats[choice-1]
-	} else {
-		// Custom format selected
-		fmt.Print("Enter width in cm: ")
-		widthStr, _ := reader.ReadString('\n')
-		widthStr = strings.TrimSpace(widthStr)
-		
-		fmt.Print("Enter height in cm: ")
-		heightStr, _ := reader.ReadString('\n')
-		heightStr = strings.TrimSpace(heightStr)
-		
-		widthCM, err1 := strconv.Atoi(widthStr)
-		heightCM, err2 := strconv.Atoi(heightStr)
-		
-		if err1 != nil || err2 != nil || widthCM <= 0 || heightCM <= 0 {
-			log.Fatal("Invalid dimensions. Please enter positive integers for width and height in cm.")
-		}
-		
-		// Convert cm to mm for internal calculation
-		widthMM := widthCM * 10
-		heightMM := heightCM * 10
-		
-		selectedFormat = createDynamicPrintFormat(fmt.Sprintf("%dx%dcm", widthCM, heightCM), widthMM, heightMM)
-		
-		fmt.Printf("📐 Custom format: %s\n", selectedFormat.Name)
 	}
 
 	// Generate output filename
@@ -431,19 +511,14 @@ func alignFaceForPassport(img image.Image, face *FaceDetection) image.Image {
 	imgWidth := bounds.Dx()
 	imgHeight := bounds.Dy()
 
-	// EXACT Austrian passport photo specifications:
-	// - Image: 35mm × 45mm (413×531 pixels at 300 DPI)
-	// - Head (chin to skull): 2/3 of image = 354 pixels
-	// - Eyes at 48% from top = 255 pixels from top
-	// - Headspace: 1/10 of image = 53 pixels above head top
+	// Passport photo specifications using configurable constants
+	// Calculate exact measurements based on configuration
+	targetHeadHeightChinToSkull := int(math.Round(float64(PHOTO_HEIGHT_PX) * HEAD_HEIGHT_RATIO))
+	eyePositionFromTop := int(math.Round(float64(PHOTO_HEIGHT_PX) * EYE_POSITION_FROM_TOP_RATIO))
+	headspaceAboveHead := int(math.Round(float64(PHOTO_HEIGHT_PX) * HEADSPACE_RATIO))
 	
-	// Calculate exact measurements
-	targetHeadHeightChinToSkull := int(math.Round(float64(PHOTO_HEIGHT_PX) * (3.0/4.0))) // Exactly 3/4 = 398px
-	eyePositionFromTop := int(math.Round(float64(PHOTO_HEIGHT_PX) * 0.48)) // Exactly 48% = 255px
-	headspaceAboveHead := int(math.Round(float64(PHOTO_HEIGHT_PX) * 0.1)) // Exactly 1/10 = 53px
-	
-	// Face detection captures about 70% of actual head height (chin to forehead)
-	targetFaceSize := int(float64(targetHeadHeightChinToSkull) * 0.70)
+	// Face detection captures a portion of actual head height (chin to forehead)
+	targetFaceSize := int(float64(targetHeadHeightChinToSkull) * FACE_DETECTION_TO_HEAD_RATIO)
 	
 	// Calculate scale factor
 	scaleFactor := float64(targetFaceSize) / float64(face.Size)
@@ -452,36 +527,36 @@ func alignFaceForPassport(img image.Image, face *FaceDetection) image.Image {
 	cropWidth := int(float64(PHOTO_WIDTH_PX) / scaleFactor)
 	cropHeight := int(float64(PHOTO_HEIGHT_PX) / scaleFactor)
 	
-	// Estimate eye level (42% down from face detection top)
-	eyeY := face.Y - face.Size/2 + int(float64(face.Size)*0.42)
+	// Estimate eye level within detected face
+	eyeY := face.Y - face.Size/2 + int(float64(face.Size)*EYE_LEVEL_IN_FACE_RATIO)
 	
-	// Position eyes at EXACTLY 48% from top (255 pixels from top in final image)
-	eyePositionInPhoto := int(float64(cropHeight) * 0.48) // 48% from top
+	// Position eyes at configured position from top
+	eyePositionInPhoto := int(float64(cropHeight) * EYE_POSITION_FROM_TOP_RATIO)
 	
 	// Center face horizontally
 	cropX := face.X - cropWidth/2
 	cropY := eyeY - eyePositionInPhoto
 	
-	// Calculate head top position for 1/10 headspace requirement
-	// Head top should be at 53 pixels from top in final image
-	headTopPositionInPhoto := int(float64(cropHeight) * 0.1) // 10% from top
+	// Calculate head top position for headspace requirement
+	headTopPositionInPhoto := int(float64(cropHeight) * HEADSPACE_RATIO)
 	
 	// Estimate skull top (forehead) position
 	faceTop := face.Y - face.Size/2
-	estimatedSkullTop := faceTop - int(float64(face.Size)*0.15) // 15% above face detection for forehead
+	estimatedSkullTop := faceTop - int(float64(face.Size)*FOREHEAD_EXTENSION_RATIO)
 	
-	// Ensure 1/10 headspace above head
+	// Ensure configured headspace above head
 	minCropYForHeadspace := estimatedSkullTop - headTopPositionInPhoto
 	if cropY > minCropYForHeadspace {
 		cropY = minCropYForHeadspace
-		fmt.Printf("🔧 Adjusted crop position for 1/10 headspace requirement\n")
+		fmt.Printf("🔧 Adjusted crop position for headspace requirement\n")
 	}
 	
-	fmt.Printf("📏 Austrian passport specifications:\n")
-	fmt.Printf("   - Head height (chin-to-skull): %d pixels (exactly 3/4 of %d)\n", targetHeadHeightChinToSkull, PHOTO_HEIGHT_PX)
-	fmt.Printf("   - Eyes position: %d pixels from top (exactly 48%% of %d)\n", eyePositionFromTop, PHOTO_HEIGHT_PX)
-	fmt.Printf("   - Headspace above head: %d pixels (exactly 1/10 of %d)\n", headspaceAboveHead, PHOTO_HEIGHT_PX)
-	fmt.Printf("   - Face detection target: %d pixels (70%% of head height)\n", targetFaceSize)
+	fmt.Printf("📏 Passport photo specifications:\n")
+	fmt.Printf("   - Photo size: %dx%dmm (%dx%d pixels at %d DPI)\n", PHOTO_WIDTH_MM, PHOTO_HEIGHT_MM, PHOTO_WIDTH_PX, PHOTO_HEIGHT_PX, DPI)
+	fmt.Printf("   - Head height (chin-to-skull): %d pixels (%.1f%% of %d)\n", targetHeadHeightChinToSkull, HEAD_HEIGHT_RATIO*100, PHOTO_HEIGHT_PX)
+	fmt.Printf("   - Eyes position: %d pixels from top (%.1f%% of %d)\n", eyePositionFromTop, EYE_POSITION_FROM_TOP_RATIO*100, PHOTO_HEIGHT_PX)
+	fmt.Printf("   - Headspace above head: %d pixels (%.1f%% of %d)\n", headspaceAboveHead, HEADSPACE_RATIO*100, PHOTO_HEIGHT_PX)
+	fmt.Printf("   - Face detection target: %d pixels (%.1f%% of head height)\n", targetFaceSize, FACE_DETECTION_TO_HEAD_RATIO*100)
 	
 	// Boundary adjustments
 	if cropX < 0 {
@@ -507,9 +582,9 @@ func alignFaceForPassport(img image.Image, face *FaceDetection) image.Image {
 		cropWidth = int(float64(cropWidth) * scale)
 		cropHeight = int(float64(cropHeight) * scale)
 		
-		// Recalculate position maintaining 48% eye positioning
+		// Recalculate position maintaining configured eye positioning
 		cropX = face.X - cropWidth/2
-		cropY = eyeY - int(float64(cropHeight)*0.48) // Keep 48% from top
+		cropY = eyeY - int(float64(cropHeight)*EYE_POSITION_FROM_TOP_RATIO)
 		
 		// Final boundary check
 		if cropX < 0 { cropX = 0 }
@@ -561,27 +636,6 @@ func createPassportPhotoFallback(img image.Image) image.Image {
 	return resizeImageHighQuality(cropped, PHOTO_WIDTH_PX, PHOTO_HEIGHT_PX)
 }
 
-func generatePreview(passportPhoto image.Image, inputPath string) string {
-	// Create 2x scale preview for easy viewing
-	previewScale := 2.0
-	previewWidth := int(float64(PHOTO_WIDTH_PX) * previewScale)
-	previewHeight := int(float64(PHOTO_HEIGHT_PX) * previewScale)
-	
-	preview := resizeImageHighQuality(passportPhoto, previewWidth, previewHeight)
-	
-	inputDir := filepath.Dir(inputPath)
-	inputName := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
-	previewPath := filepath.Join(inputDir, fmt.Sprintf("%s_passport_preview.jpg", inputName))
-	
-	err := saveImage(preview, previewPath)
-	if err != nil {
-		fmt.Printf("Warning: Could not save preview: %v\n", err)
-		return ""
-	}
-	
-	return previewPath
-}
-
 func createPrintLayout(passportPhoto image.Image, format PrintFormat) image.Image {
 	fmt.Printf("📄 Creating %s layout (%dx%d grid)\n",
 		format.Name, format.Columns, format.Rows)
@@ -602,9 +656,8 @@ func createPrintLayout(passportPhoto image.Image, format PrintFormat) image.Imag
 	remainingHeight := format.HeightPX - totalPhotosHeight
 	
 	// Distribute remaining space: margins + spacing between photos
-	// Use minimum 2mm spacing, distribute rest as margins
-	minSpacingMM := 2.0
-	minSpacingPX := int(math.Round(minSpacingMM * 300.0 / 25.4))
+	// Use configurable minimum spacing, distribute rest as margins
+	minSpacingPX := int(math.Round(MIN_SPACING_MM * float64(DPI) / 25.4))
 	
 	var spacingX, spacingY int
 	var marginX, marginY int
