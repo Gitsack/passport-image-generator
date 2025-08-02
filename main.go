@@ -240,33 +240,10 @@ func getConfig() Config {
 	
 	// Check for command line argument first
 	if len(os.Args) > 1 {
-		inputPath = os.Args[1]
-		
-		// If format is provided as second argument, use it; otherwise use default 10x15cm
-		if len(os.Args) > 2 {
-			formatArg := os.Args[2]
-			predefinedFormats := getPredefinedFormats()
-			
-			switch formatArg {
-			case "10x15", "1":
-				selectedFormat = predefinedFormats[0]
-			case "13x18", "2":
-				selectedFormat = predefinedFormats[1]
-			default:
-				fmt.Printf("Invalid format '%s'. Using default 10x15cm format.\n", formatArg)
-				selectedFormat = predefinedFormats[0]
-			}
-		} else {
-			// Default to 10x15cm format for command line usage
-			predefinedFormats := getPredefinedFormats()
-			selectedFormat = predefinedFormats[0]
-			fmt.Printf("Using default format: %s\n", selectedFormat.Name)
-		}
+		inputPath, selectedFormat = parseCommandLineArgs()
 	} else {
 		// Interactive mode
-		fmt.Print("Enter path to input image: ")
-		input, _ := reader.ReadString('\n')
-		inputPath = strings.TrimSpace(input)
+		inputPath = getInteractiveInputPath(reader)
 		
 		// Get predefined formats with dynamic calculation
 		predefinedFormats := getPredefinedFormats()
@@ -334,6 +311,111 @@ func getConfig() Config {
 		OutputPath:  outputPath,
 		PrintFormat: selectedFormat,
 	}
+}
+
+// parseCommandLineArgs handles command line argument parsing with support for file paths containing spaces
+func parseCommandLineArgs() (string, PrintFormat) {
+	predefinedFormats := getPredefinedFormats()
+	
+	// Strategy 1: Try to reconstruct file path from multiple arguments
+	// Look for a valid file by combining arguments until we find an existing file
+	var inputPath string
+	var formatArg string
+	
+	// Try different combinations of arguments to find the actual file path
+	for i := 1; i < len(os.Args); i++ {
+		// Build potential file path from os.Args[1] to os.Args[i]
+		potentialPath := strings.Join(os.Args[1:i+1], " ")
+		
+		// Check if this path exists
+		if _, err := os.Stat(potentialPath); err == nil {
+			inputPath = potentialPath
+			// Remaining arguments after the file path could be format
+			if i+1 < len(os.Args) {
+				formatArg = os.Args[i+1]
+			}
+			break
+		}
+	}
+	
+	// If no valid file found by reconstruction, use the first argument as-is
+	// (this maintains backward compatibility for properly quoted paths)
+	if inputPath == "" {
+		inputPath = os.Args[1]
+		if len(os.Args) > 2 {
+			formatArg = os.Args[2]
+		}
+	}
+	
+	// Parse format argument
+	var selectedFormat PrintFormat
+	if formatArg != "" {
+		switch formatArg {
+		case "10x15", "1":
+			selectedFormat = predefinedFormats[0]
+		case "13x18", "2":
+			selectedFormat = predefinedFormats[1]
+		default:
+			fmt.Printf("Invalid format '%s'. Using default 10x15cm format.\n", formatArg)
+			selectedFormat = predefinedFormats[0]
+		}
+	} else {
+		// Default to 10x15cm format for command line usage
+		selectedFormat = predefinedFormats[0]
+		fmt.Printf("Using default format: %s\n", selectedFormat.Name)
+	}
+	
+	return inputPath, selectedFormat
+}
+
+// getInteractiveInputPath handles interactive path input with enhanced error handling and path cleaning
+func getInteractiveInputPath(reader *bufio.Reader) string {
+	for {
+		fmt.Print("Enter path to input image: ")
+		input, _ := reader.ReadString('\n')
+		inputPath := strings.TrimSpace(input)
+		
+		// Handle common issues with interactive input
+		inputPath = cleanInputPath(inputPath)
+		
+		// Check if file exists
+		if _, err := os.Stat(inputPath); err == nil {
+			return inputPath
+		}
+		
+		// File doesn't exist - provide helpful error message
+		fmt.Printf("❌ File not found: %s\n", inputPath)
+		fmt.Println("💡 Tips:")
+		fmt.Println("   - Use tab completion to auto-complete paths")
+		fmt.Println("   - For paths with spaces, you can:")
+		fmt.Println("     • Use quotes: \"/path/with spaces/file.jpg\"")
+		fmt.Println("     • Let tab completion handle escaping")
+		fmt.Println("     • Just type the path normally (spaces are OK)")
+		fmt.Print("\n")
+	}
+}
+
+// cleanInputPath cleans up common issues with user-entered paths
+func cleanInputPath(path string) string {
+	// Remove surrounding quotes if present
+	if len(path) >= 2 {
+		if (path[0] == '"' && path[len(path)-1] == '"') ||
+		   (path[0] == '\'' && path[len(path)-1] == '\'') {
+			path = path[1 : len(path)-1]
+		}
+	}
+	
+	// Handle escaped spaces (convert "\ " back to " ")
+	path = strings.ReplaceAll(path, "\\ ", " ")
+	
+	// Expand tilde to home directory if needed
+	if strings.HasPrefix(path, "~/") {
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(homeDir, path[2:])
+		}
+	}
+	
+	return path
 }
 
 func loadImage(path string) (image.Image, error) {
