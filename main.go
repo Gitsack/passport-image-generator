@@ -327,7 +327,7 @@ func alignFaceForPassport(img image.Image, face *FaceDetection) image.Image {
 	// - Headspace: 1/10 of image = 53 pixels above head top
 	
 	// Calculate exact measurements
-	targetHeadHeightChinToSkull := int(math.Round(float64(PHOTO_HEIGHT_PX) * (2.0/3.0))) // Exactly 2/3 = 354px
+	targetHeadHeightChinToSkull := int(math.Round(float64(PHOTO_HEIGHT_PX) * (3.0/4.0))) // Exactly 3/4 = 398px
 	eyePositionFromTop := int(math.Round(float64(PHOTO_HEIGHT_PX) * 0.48)) // Exactly 48% = 255px
 	headspaceAboveHead := int(math.Round(float64(PHOTO_HEIGHT_PX) * 0.1)) // Exactly 1/10 = 53px
 	
@@ -367,7 +367,7 @@ func alignFaceForPassport(img image.Image, face *FaceDetection) image.Image {
 	}
 	
 	fmt.Printf("📏 Austrian passport specifications:\n")
-	fmt.Printf("   - Head height (chin-to-skull): %d pixels (exactly 2/3 of %d)\n", targetHeadHeightChinToSkull, PHOTO_HEIGHT_PX)
+	fmt.Printf("   - Head height (chin-to-skull): %d pixels (exactly 3/4 of %d)\n", targetHeadHeightChinToSkull, PHOTO_HEIGHT_PX)
 	fmt.Printf("   - Eyes position: %d pixels from top (exactly 48%% of %d)\n", eyePositionFromTop, PHOTO_HEIGHT_PX)
 	fmt.Printf("   - Headspace above head: %d pixels (exactly 1/10 of %d)\n", headspaceAboveHead, PHOTO_HEIGHT_PX)
 	fmt.Printf("   - Face detection target: %d pixels (70%% of head height)\n", targetFaceSize)
