@@ -723,7 +723,7 @@ func createPrintLayout(passportPhoto image.Image, format PrintFormat) image.Imag
 		}
 	}
 
-	fmt.Printf("✅ Placed %d photos successfully (all in 35x45mm portrait orientation)\n", photoCount)
+	fmt.Printf("✅ Placed %d photos successfully\n", photoCount)
 	return canvas
 }
 
