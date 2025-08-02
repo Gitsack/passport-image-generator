@@ -43,10 +43,88 @@ type PrintFormat struct {
 	Rows           int
 }
 
-var printFormats = []PrintFormat{
-	{"10x15cm (8 photos)", 150, 100, 1772, 1181, 8, 4, 2}, // Fixed: landscape orientation (15x10cm)
-	{"13x18cm (12 photos)", 180, 130, 2126, 1535, 12, 4, 3}, // Fixed: landscape orientation
-	{"A4 (20 photos)", 297, 210, 3508, 2480, 20, 5, 4}, // Fixed: landscape orientation
+// calculateOptimalLayout calculates the optimal grid layout for 35x45mm passport photos
+// It considers both orientations of the paper and chooses the one that fits more photos
+func calculateOptimalLayout(widthMM, heightMM int) (cols, rows, totalPhotos int, finalWidthMM, finalHeightMM int) {
+	// Try both orientations and pick the one that fits more photos
+	
+	// Option 1: Original orientation
+	cols1, rows1, total1 := calculateLayoutForOrientation(widthMM, heightMM)
+	
+	// Option 2: Rotated orientation (swap width and height)
+	cols2, rows2, total2 := calculateLayoutForOrientation(heightMM, widthMM)
+	
+	// Choose the orientation that fits more photos
+	if total1 >= total2 {
+		return cols1, rows1, total1, widthMM, heightMM
+	} else {
+		return cols2, rows2, total2, heightMM, widthMM
+	}
+}
+
+// calculateLayoutForOrientation calculates layout for a specific paper orientation
+// Maximizes photo count by calculating optimal spacing
+func calculateLayoutForOrientation(widthMM, heightMM int) (cols, rows, totalPhotos int) {
+	// Convert mm to pixels at 300 DPI
+	widthPX := int(math.Round(float64(widthMM) * 300.0 / 25.4))
+	heightPX := int(math.Round(float64(heightMM) * 300.0 / 25.4))
+	
+	// Minimum spacing: 2mm between photos, 2mm margins
+	minSpacingMM := 2.0
+	minSpacingPX := int(math.Round(minSpacingMM * 300.0 / 25.4))
+	minMarginPX := minSpacingPX
+	
+	// Calculate maximum photos that can fit with minimum spacing
+	// Formula: (paperSize - 2*margin) >= cols*photoSize + (cols-1)*spacing
+	// Rearranged: cols <= (paperSize - 2*margin + spacing) / (photoSize + spacing)
+	
+	maxCols := (widthPX - 2*minMarginPX + minSpacingPX) / (PHOTO_WIDTH_PX + minSpacingPX)
+	maxRows := (heightPX - 2*minMarginPX + minSpacingPX) / (PHOTO_HEIGHT_PX + minSpacingPX)
+	
+	cols = maxCols
+	rows = maxRows
+	totalPhotos = cols * rows
+	
+	// Ensure at least 1 photo can fit
+	if cols < 1 || rows < 1 {
+		cols, rows, totalPhotos = 1, 1, 1
+	}
+	
+	return cols, rows, totalPhotos
+}
+
+// createDynamicPrintFormat creates a PrintFormat with optimal layout calculation
+func createDynamicPrintFormat(name string, widthMM, heightMM int) PrintFormat {
+	cols, rows, totalPhotos, finalWidthMM, finalHeightMM := calculateOptimalLayout(widthMM, heightMM)
+	
+	// Convert final dimensions to pixels
+	finalWidthPX := int(math.Round(float64(finalWidthMM) * 300.0 / 25.4))
+	finalHeightPX := int(math.Round(float64(finalHeightMM) * 300.0 / 25.4))
+	
+	// Add orientation info to name if paper was rotated
+	orientationInfo := ""
+	if finalWidthMM != widthMM || finalHeightMM != heightMM {
+		orientationInfo = fmt.Sprintf(" [rotated to %dx%dcm]", finalWidthMM/10, finalHeightMM/10)
+	}
+	
+	return PrintFormat{
+		Name:           fmt.Sprintf("%s%s (%d photos)", name, orientationInfo, totalPhotos),
+		WidthMM:        finalWidthMM,
+		HeightMM:       finalHeightMM,
+		WidthPX:        finalWidthPX,
+		HeightPX:       finalHeightPX,
+		PhotosPerSheet: totalPhotos,
+		Columns:        cols,
+		Rows:           rows,
+	}
+}
+
+// getPredefinedFormats returns the standard print formats with dynamic calculation
+func getPredefinedFormats() []PrintFormat {
+	return []PrintFormat{
+		createDynamicPrintFormat("10x15cm", 150, 100), // Landscape: 15x10cm
+		createDynamicPrintFormat("13x18cm", 180, 130), // Landscape: 18x13cm
+	}
 }
 
 type Config struct {
@@ -114,23 +192,56 @@ func getConfig() Config {
 		log.Fatal("Input file does not exist:", inputPath)
 	}
 
+	// Get predefined formats with dynamic calculation
+	predefinedFormats := getPredefinedFormats()
+
 	// Show available print formats
 	fmt.Println("\nAvailable print formats:")
-	for i, format := range printFormats {
+	for i, format := range predefinedFormats {
 		fmt.Printf("%d. %s - %d photos (%dx%d grid)\n",
 			i+1, format.Name, format.PhotosPerSheet, format.Columns, format.Rows)
 	}
+	fmt.Printf("%d. Custom size (WxH cm)\n", len(predefinedFormats)+1)
 
-	fmt.Print("Select format (1-3): ")
+	fmt.Printf("Select format (1-%d): ", len(predefinedFormats)+1)
 	formatChoice, _ := reader.ReadString('\n')
 	formatChoice = strings.TrimSpace(formatChoice)
 
 	choice, err := strconv.Atoi(formatChoice)
-	if err != nil || choice < 1 || choice > len(printFormats) {
+	if err != nil || choice < 1 || choice > len(predefinedFormats)+1 {
 		log.Fatal("Invalid format choice")
 	}
 
-	selectedFormat := printFormats[choice-1]
+	var selectedFormat PrintFormat
+
+	if choice <= len(predefinedFormats) {
+		// Predefined format selected
+		selectedFormat = predefinedFormats[choice-1]
+	} else {
+		// Custom format selected
+		fmt.Print("Enter width in cm: ")
+		widthStr, _ := reader.ReadString('\n')
+		widthStr = strings.TrimSpace(widthStr)
+		
+		fmt.Print("Enter height in cm: ")
+		heightStr, _ := reader.ReadString('\n')
+		heightStr = strings.TrimSpace(heightStr)
+		
+		widthCM, err1 := strconv.Atoi(widthStr)
+		heightCM, err2 := strconv.Atoi(heightStr)
+		
+		if err1 != nil || err2 != nil || widthCM <= 0 || heightCM <= 0 {
+			log.Fatal("Invalid dimensions. Please enter positive integers for width and height in cm.")
+		}
+		
+		// Convert cm to mm for internal calculation
+		widthMM := widthCM * 10
+		heightMM := heightCM * 10
+		
+		selectedFormat = createDynamicPrintFormat(fmt.Sprintf("%dx%dcm", widthCM, heightCM), widthMM, heightMM)
+		
+		fmt.Printf("📐 Custom format: %s\n", selectedFormat.Name)
+	}
 
 	// Generate output filename
 	inputDir := filepath.Dir(inputPath)
@@ -472,7 +583,7 @@ func generatePreview(passportPhoto image.Image, inputPath string) string {
 }
 
 func createPrintLayout(passportPhoto image.Image, format PrintFormat) image.Image {
-	fmt.Printf("📄 Creating %s layout (%dx%d grid)\n", 
+	fmt.Printf("📄 Creating %s layout (%dx%d grid)\n",
 		format.Name, format.Columns, format.Rows)
 
 	// Create white canvas
@@ -480,53 +591,86 @@ func createPrintLayout(passportPhoto image.Image, format PrintFormat) image.Imag
 	white := color.RGBA{255, 255, 255, 255}
 	draw.Draw(canvas, canvas.Bounds(), &image.Uniform{white}, image.Point{}, draw.Src)
 
-	// Calculate layout with proper margins
-	margin := 40
-	availableWidth := format.WidthPX - 2*margin
-	availableHeight := format.HeightPX - 2*margin
-
-	// Calculate spacing for even distribution
+	// Calculate optimal layout with maximum photo utilization
+	// Calculate spacing to distribute remaining space evenly
+	
 	totalPhotosWidth := format.Columns * PHOTO_WIDTH_PX
 	totalPhotosHeight := format.Rows * PHOTO_HEIGHT_PX
-
+	
+	// Calculate available space for spacing and margins
+	remainingWidth := format.WidthPX - totalPhotosWidth
+	remainingHeight := format.HeightPX - totalPhotosHeight
+	
+	// Distribute remaining space: margins + spacing between photos
+	// Use minimum 2mm spacing, distribute rest as margins
+	minSpacingMM := 2.0
+	minSpacingPX := int(math.Round(minSpacingMM * 300.0 / 25.4))
+	
 	var spacingX, spacingY int
+	var marginX, marginY int
+	
 	if format.Columns > 1 {
-		spacingX = (availableWidth - totalPhotosWidth) / (format.Columns - 1)
+		totalSpacingWidth := (format.Columns - 1) * minSpacingPX
+		marginX = (remainingWidth - totalSpacingWidth) / 2
+		spacingX = minSpacingPX
+		
+		// If margins would be too small, increase spacing
+		if marginX < minSpacingPX {
+			spacingX = remainingWidth / format.Columns
+			marginX = spacingX / 2
+		}
+	} else {
+		marginX = remainingWidth / 2
+		spacingX = 0
 	}
+	
 	if format.Rows > 1 {
-		spacingY = (availableHeight - totalPhotosHeight) / (format.Rows - 1)
+		totalSpacingHeight := (format.Rows - 1) * minSpacingPX
+		marginY = (remainingHeight - totalSpacingHeight) / 2
+		spacingY = minSpacingPX
+		
+		// If margins would be too small, increase spacing
+		if marginY < minSpacingPX {
+			spacingY = remainingHeight / format.Rows
+			marginY = spacingY / 2
+		}
+	} else {
+		marginY = remainingHeight / 2
+		spacingY = 0
 	}
+	
+	startX := marginX
+	startY := marginY
+	
+	spacingMM := math.Min(float64(spacingX), float64(spacingY)) * 25.4 / 300.0
+	marginMM := math.Min(float64(marginX), float64(marginY)) * 25.4 / 300.0
 
-	// Center the grid
-	totalGridWidth := totalPhotosWidth + (format.Columns-1)*spacingX
-	totalGridHeight := totalPhotosHeight + (format.Rows-1)*spacingY
+	fmt.Printf("📐 Grid layout: start=(%d,%d), spacing=%.1fmm, margin=%.1fmm\n",
+		startX, startY, spacingMM, marginMM)
 
-	startX := (format.WidthPX - totalGridWidth) / 2
-	startY := (format.HeightPX - totalGridHeight) / 2
-
-	fmt.Printf("📐 Grid layout: start=(%d,%d), spacing=(%d,%d)\n", 
-		startX, startY, spacingX, spacingY)
-
-	// Place photos in grid
+	// Place photos in grid with strict no-cropping policy
 	photoCount := 0
 	for row := 0; row < format.Rows && photoCount < format.PhotosPerSheet; row++ {
 		for col := 0; col < format.Columns && photoCount < format.PhotosPerSheet; col++ {
 			x := startX + col*(PHOTO_WIDTH_PX+spacingX)
 			y := startY + row*(PHOTO_HEIGHT_PX+spacingY)
 
-			// Ensure photo fits within canvas
+			// Strict boundary check: photo must fit completely within canvas
 			if x >= 0 && y >= 0 &&
 				x+PHOTO_WIDTH_PX <= format.WidthPX &&
 				y+PHOTO_HEIGHT_PX <= format.HeightPX {
 
+				// Place photo (35x45mm portrait orientation)
 				photoRect := image.Rect(x, y, x+PHOTO_WIDTH_PX, y+PHOTO_HEIGHT_PX)
 				draw.Draw(canvas, photoRect, passportPhoto, image.Point{0, 0}, draw.Src)
 				photoCount++
+			} else {
+				fmt.Printf("⚠️  Photo at position (%d,%d) would be cropped, skipping\n", col+1, row+1)
 			}
 		}
 	}
 
-	fmt.Printf("✅ Placed %d photos successfully\n", photoCount)
+	fmt.Printf("✅ Placed %d photos successfully (all in 35x45mm portrait orientation)\n", photoCount)
 	return canvas
 }
 
