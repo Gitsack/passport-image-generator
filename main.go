@@ -320,11 +320,19 @@ func alignFaceForPassport(img image.Image, face *FaceDetection) image.Image {
 	imgWidth := bounds.Dx()
 	imgHeight := bounds.Dy()
 
-	// Calculate target face size based on Austrian standards
-	// Face detection size should be ~53% of actual head height
-	// Head height should be 70% of photo height (reduced from 75% to avoid hair cropping)
-	targetHeadHeight := int(math.Round(float64(PHOTO_HEIGHT_PX) * 0.70)) // Reduced to 70%
-	targetFaceSize := int(float64(targetHeadHeight) * FACE_DETECTION_TO_HEAD_RATIO)
+	// EXACT Austrian passport photo specifications:
+	// - Image: 35mm × 45mm (413×531 pixels at 300 DPI)
+	// - Head (chin to skull): 2/3 of image = 354 pixels
+	// - Eyes at 48% from top = 255 pixels from top
+	// - Headspace: 1/10 of image = 53 pixels above head top
+	
+	// Calculate exact measurements
+	targetHeadHeightChinToSkull := int(math.Round(float64(PHOTO_HEIGHT_PX) * (2.0/3.0))) // Exactly 2/3 = 354px
+	eyePositionFromTop := int(math.Round(float64(PHOTO_HEIGHT_PX) * 0.48)) // Exactly 48% = 255px
+	headspaceAboveHead := int(math.Round(float64(PHOTO_HEIGHT_PX) * 0.1)) // Exactly 1/10 = 53px
+	
+	// Face detection captures about 70% of actual head height (chin to forehead)
+	targetFaceSize := int(float64(targetHeadHeightChinToSkull) * 0.70)
 	
 	// Calculate scale factor
 	scaleFactor := float64(targetFaceSize) / float64(face.Size)
@@ -336,13 +344,33 @@ func alignFaceForPassport(img image.Image, face *FaceDetection) image.Image {
 	// Estimate eye level (42% down from face detection top)
 	eyeY := face.Y - face.Size/2 + int(float64(face.Size)*0.42)
 	
-	// Calculate crop position for proper eye placement
-	// Eyes should be at 60% from bottom (reduced from 65% to include more hair)
-	eyePositionInPhoto := int(float64(cropHeight) * (1.0 - 0.60)) // Changed to 60%
+	// Position eyes at EXACTLY 48% from top (255 pixels from top in final image)
+	eyePositionInPhoto := int(float64(cropHeight) * 0.48) // 48% from top
 	
 	// Center face horizontally
 	cropX := face.X - cropWidth/2
 	cropY := eyeY - eyePositionInPhoto
+	
+	// Calculate head top position for 1/10 headspace requirement
+	// Head top should be at 53 pixels from top in final image
+	headTopPositionInPhoto := int(float64(cropHeight) * 0.1) // 10% from top
+	
+	// Estimate skull top (forehead) position
+	faceTop := face.Y - face.Size/2
+	estimatedSkullTop := faceTop - int(float64(face.Size)*0.15) // 15% above face detection for forehead
+	
+	// Ensure 1/10 headspace above head
+	minCropYForHeadspace := estimatedSkullTop - headTopPositionInPhoto
+	if cropY > minCropYForHeadspace {
+		cropY = minCropYForHeadspace
+		fmt.Printf("🔧 Adjusted crop position for 1/10 headspace requirement\n")
+	}
+	
+	fmt.Printf("📏 Austrian passport specifications:\n")
+	fmt.Printf("   - Head height (chin-to-skull): %d pixels (exactly 2/3 of %d)\n", targetHeadHeightChinToSkull, PHOTO_HEIGHT_PX)
+	fmt.Printf("   - Eyes position: %d pixels from top (exactly 48%% of %d)\n", eyePositionFromTop, PHOTO_HEIGHT_PX)
+	fmt.Printf("   - Headspace above head: %d pixels (exactly 1/10 of %d)\n", headspaceAboveHead, PHOTO_HEIGHT_PX)
+	fmt.Printf("   - Face detection target: %d pixels (70%% of head height)\n", targetFaceSize)
 	
 	// Boundary adjustments
 	if cropX < 0 {
@@ -368,9 +396,9 @@ func alignFaceForPassport(img image.Image, face *FaceDetection) image.Image {
 		cropWidth = int(float64(cropWidth) * scale)
 		cropHeight = int(float64(cropHeight) * scale)
 		
-		// Recalculate position
+		// Recalculate position maintaining 48% eye positioning
 		cropX = face.X - cropWidth/2
-		cropY = eyeY - int(float64(cropHeight)*(1.0-EYE_POSITION_RATIO))
+		cropY = eyeY - int(float64(cropHeight)*0.48) // Keep 48% from top
 		
 		// Final boundary check
 		if cropX < 0 { cropX = 0 }
