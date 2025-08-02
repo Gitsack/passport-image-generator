@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/Gitsack/passport-image-generator/compare/v1.0.2...v1.0.3) (2025-08-02)
+
+
+### Bug Fixes
+
+* updated inputPath ([4c5c8d0](https://github.com/Gitsack/passport-image-generator/commit/4c5c8d023f75f800b57491f7545d81872c6dfedb))
+
 ## [1.0.2](https://github.com/Gitsack/passport-image-generator/compare/v1.0.1...v1.0.2) (2025-08-02)
 
 
