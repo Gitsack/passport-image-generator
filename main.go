@@ -398,7 +398,7 @@ func createPassportPhoto(img image.Image) (image.Image, error) {
 	// Create passport photo with proper Austrian alignment
 	result := alignFaceForPassport(img, face)
 	
-	fmt.Println("✅ Face aligned according to Austrian passport standards")
+	fmt.Println("✅ Face aligned")
 	return result, nil
 }
 
