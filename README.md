@@ -1,5 +1,7 @@
 # Passport Photo Generator
 
+📸
+
 A configurable, automatic passport photo generator that supports different countries' passport photo requirements. Uses advanced face detection and alignment to create professional passport photos that meet official standards.
 
 ## Features
