@@ -186,3 +186,5 @@ This project is open source. Please check the license file for details.
 - Pigo face detection library by Endre Simo
 - Go EXIF library by Ryan Carlsen
 - Austrian passport photo standards for reference implementation
+- Sample photo by <a href="https://unsplash.com/@jakenackos?utm_content=creditCopyText&utm_medium=referral&utm_source=unsplash">Jake Nackos</a> on <a href="https://unsplash.com/photos/woman-in-white-crew-neck-shirt-smiling-IF9TK5Uy-KI?utm_content=creditCopyText&utm_medium=referral&utm_source=unsplash">Unsplash</a>
+      
