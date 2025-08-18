@@ -73,15 +73,15 @@ const (
 	// Headspace above head as fraction of photo height (default: 10% for Austrian)
 	HEADSPACE_RATIO = 0.1  // Space above head as fraction of photo height
 	
-	// Face detection calibration (how much of actual head the face detection captures)
-	// This is used to scale the detected face to match the required head size
-	FACE_DETECTION_TO_HEAD_RATIO = 0.70  // Face detection captures ~70% of head height
-	
 	// Eye level within detected face (where eyes are relative to face detection box)
 	EYE_LEVEL_IN_FACE_RATIO = 0.42  // Eyes at 42% down from top of face detection
 	
 	// Forehead estimation (how much above face detection is the skull top)
 	FOREHEAD_EXTENSION_RATIO = 0.15  // Skull extends 15% above face detection
+	
+	// Chin estimation (how much below the face detection bottom the chin likely is)
+	// This compensates for detectors that stop around the mouth and miss the chin.
+	CHIN_EXTENSION_RATIO = 0.10  // Chin extends ~10% of face box below detection
 	
 	// =============================================================================
 	// LAYOUT CONFIGURATION
@@ -599,34 +599,38 @@ func alignFaceForPassport(img image.Image, face *FaceDetection) image.Image {
 	eyePositionFromTop := int(math.Round(float64(PHOTO_HEIGHT_PX) * EYE_POSITION_FROM_TOP_RATIO))
 	headspaceAboveHead := int(math.Round(float64(PHOTO_HEIGHT_PX) * HEADSPACE_RATIO))
 	
-	// Face detection captures a portion of actual head height (chin to forehead)
-	targetFaceSize := int(float64(targetHeadHeightChinToSkull) * FACE_DETECTION_TO_HEAD_RATIO)
+	// Estimate key landmarks from detected face box
+	faceTop := face.Y - face.Size/2
+	faceBottom := face.Y + face.Size/2
+	eyeY := faceTop + int(float64(face.Size)*EYE_LEVEL_IN_FACE_RATIO)
+
+	// Estimate skull top and chin relative to face box with tunable extensions
+	estimatedSkullTop := faceTop - int(float64(face.Size)*FOREHEAD_EXTENSION_RATIO)
+	estimatedChin := faceBottom + int(float64(face.Size)*CHIN_EXTENSION_RATIO)
+	if estimatedChin <= estimatedSkullTop {
+		// Safety guard to avoid division by zero or negative height
+		estimatedChin = estimatedSkullTop + 1
+	}
+
+	// Adaptive head height estimate in the original image
+	estimatedHeadHeight := estimatedChin - estimatedSkullTop
 	
-	// Calculate scale factor
-	scaleFactor := float64(targetFaceSize) / float64(face.Size)
+	// Scale factor to make the estimated head height match the target
+	scaleFactor := float64(targetHeadHeightChinToSkull) / float64(estimatedHeadHeight)
 	
 	// Calculate crop dimensions maintaining passport aspect ratio
 	cropWidth := int(float64(PHOTO_WIDTH_PX) / scaleFactor)
 	cropHeight := int(float64(PHOTO_HEIGHT_PX) / scaleFactor)
 	
-	// Estimate eye level within detected face
-	eyeY := face.Y - face.Size/2 + int(float64(face.Size)*EYE_LEVEL_IN_FACE_RATIO)
-	
-	// Position eyes at configured position from top
+	// Position eyes to the configured position in the output
 	eyePositionInPhoto := int(float64(cropHeight) * EYE_POSITION_FROM_TOP_RATIO)
 	
-	// Center face horizontally
+	// Center face horizontally and align vertically by eye level
 	cropX := face.X - cropWidth/2
 	cropY := eyeY - eyePositionInPhoto
 	
-	// Calculate head top position for headspace requirement
+	// Ensure configured headspace above head by adjusting crop if needed
 	headTopPositionInPhoto := int(float64(cropHeight) * HEADSPACE_RATIO)
-	
-	// Estimate skull top (forehead) position
-	faceTop := face.Y - face.Size/2
-	estimatedSkullTop := faceTop - int(float64(face.Size)*FOREHEAD_EXTENSION_RATIO)
-	
-	// Ensure configured headspace above head
 	minCropYForHeadspace := estimatedSkullTop - headTopPositionInPhoto
 	if cropY > minCropYForHeadspace {
 		cropY = minCropYForHeadspace
@@ -638,7 +642,7 @@ func alignFaceForPassport(img image.Image, face *FaceDetection) image.Image {
 	fmt.Printf("   - Head height (chin-to-skull): %d pixels (%.1f%% of %d)\n", targetHeadHeightChinToSkull, HEAD_HEIGHT_RATIO*100, PHOTO_HEIGHT_PX)
 	fmt.Printf("   - Eyes position: %d pixels from top (%.1f%% of %d)\n", eyePositionFromTop, EYE_POSITION_FROM_TOP_RATIO*100, PHOTO_HEIGHT_PX)
 	fmt.Printf("   - Headspace above head: %d pixels (%.1f%% of %d)\n", headspaceAboveHead, HEADSPACE_RATIO*100, PHOTO_HEIGHT_PX)
-	fmt.Printf("   - Face detection target: %d pixels (%.1f%% of head height)\n", targetFaceSize, FACE_DETECTION_TO_HEAD_RATIO*100)
+	fmt.Printf("   - Adaptive estimate: skullTop=%d, chin=%d, headHeight=%d, scale=%.3f\n", estimatedSkullTop, estimatedChin, estimatedHeadHeight, scaleFactor)
 	
 	// Boundary adjustments
 	if cropX < 0 {
