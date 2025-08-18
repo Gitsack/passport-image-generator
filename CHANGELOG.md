@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.4](https://github.com/Gitsack/passport-image-generator/compare/v1.0.3...v1.0.4) (2025-08-18)
+
+
+### Bug Fixes
+
+* added sample image ([45d553c](https://github.com/Gitsack/passport-image-generator/commit/45d553ca5488df51a6d8c8c35003b87e472d03cd))
+* new head height estimation ([a35343a](https://github.com/Gitsack/passport-image-generator/commit/a35343ac42b63117e755c0ae2e0b179951b61abf))
+
 ## [1.0.3](https://github.com/Gitsack/passport-image-generator/compare/v1.0.2...v1.0.3) (2025-08-02)
 
 
